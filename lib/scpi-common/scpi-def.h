@@ -30,13 +30,14 @@
 #define __SCPI_DEF_H_
 
 #include "scpi/scpi.h"
+#include "this_hardware.h"
 
 #define SCPI_INPUT_BUFFER_LENGTH 256
 #define SCPI_ERROR_QUEUE_SIZE 17
-#define SCPI_IDN1 "MANUFACTURE"
-#define SCPI_IDN2 "INSTR2013"
+#define SCPI_IDN1 "AlphaFoxtrotCharlie"
+#define SCPI_IDN2 "CapsuleSealTester"
 #define SCPI_IDN3 NULL
-#define SCPI_IDN4 "01-02"
+#define SCPI_IDN4 "201026.1"
 
 extern const scpi_command_t scpi_commands[];
 extern scpi_interface_t scpi_interface;

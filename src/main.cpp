@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "scpi\scpi.h"
+#include "scpi/scpi.h"
 #include "scpi-def.h"
 
 // Macros and functions for testing SCPI comms:
@@ -19,8 +19,10 @@ int _write(int file, char *ptr, int len) {
 }
 
 void setup() {
-  pinMode(13,OUTPUT);
+  init_hardware(); //run the hardware initalisation routine
+
   Serial.begin(9600);
+  
   //initalise the SCPI interface: scpi-def.h has all the commands...
   SCPI_Init(&scpi_context,
           scpi_commands,
@@ -32,7 +34,6 @@ void setup() {
 }
 
 void loop() {
-  digitalWriteFast(13,!digitalReadFast(13));
   test_scpi();
   delay(1000);
 }
@@ -46,4 +47,14 @@ void test_scpi(void) {
   TEST_SCPI_INPUT("*TST?\r\n");
   //clear all queue errors:
   TEST_SCPI_INPUT("*CLS\r\n");
+  //
+  //TEST_SCPI_INPUT("TEST:CHANnellist 3.5,(@1!1,2!1,6!1,1!8,3)\r\n");
+  //
+  //TEST_SCPI_INPUT("TEST:CHOice? EXT\r\n");
+  //
+  TEST_SCPI_INPUT("DRIV:STAT?\r\n");
+  //
+  TEST_SCPI_INPUT("DRIV:STAT? (@2)\r\n");
+  //
+  //TEST_SCPI_INPUT("DRIV:STAT 201026.1,(@2)\r\n");
 }
