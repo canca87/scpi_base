@@ -1,12 +1,11 @@
 #include "this_hardware.h"
 
-// Local function definitions
-
+// Hardware IO pin mappings. From schematic 200312 LD driver M controller.
 byte module_EEPROM_pin[6] = {6,9,15,20,23,26};
 byte module_DIGIPOT_pin[6] = {8,14,17,22,25,28};
-byte module_AD5592_pin[6] = {10,10,10,10,10,10};
+byte module_AD5592_pin[6] = {7,10,16,21,24,27};
 byte module_TTL_pin[6] = {0,1,2,3,4,5};
-
+ad5592 driver_modules[6];
 
 /* init_hardware
  *
@@ -31,12 +30,216 @@ void init_hardware(void){
     digitalWriteFast(module_TTL_pin[i],LOW); // TTL is active high.
   }
   SPI.begin();
+  for (byte i = 0; i< 6; i++) {
+    if (check_eeprom_presence(i+1) == 1) {
+      driver_modules[i].begin(module_AD5592_pin[i]);
+      Serial.begin(9600);
+      delay(1000);
+      Serial.print("Driver module ");
+      Serial.print(i);
+      Serial.print(" started with pin ");
+      Serial.println(module_AD5592_pin[i]);
+      // Set some default pin modes for the driver:
+      // IO-0 is DAC
+      // IO-1 is ADC
+      // IO-2 is GPO_DRIVE
+      // IO-3 is GPO_DRIVE
+      // IO-4 is GPI
+      // IO-5 is GPI
+      // IO-6 is OFF
+      // IO-7 is OFF
+      driver_modules[i].set_state(0,ad5592_state::dac_mode);
+      driver_modules[i].write_state(0,0); // DAC output to zero volts
+      driver_modules[i].set_state(1,ad5592_state::adc_mode);
+      driver_modules[i].set_state(2,ad5592_state::gpo_mode);
+      driver_modules[i].set_gpo_mode(2,ad5592_gio_mode::push_pull);
+      driver_modules[i].write_state(2,0); // GPO set to zero volts
+      driver_modules[i].set_state(3,ad5592_state::gpo_mode);
+      driver_modules[i].set_gpo_mode(3,ad5592_gio_mode::push_pull);
+      driver_modules[i].write_state(3,0); // GPO set to zero volts
+      driver_modules[i].set_state(4,ad5592_state::gpi_mode);
+      driver_modules[i].set_state(5,ad5592_state::gpi_mode);
+      driver_modules[i].set_state(6,ad5592_state::off_mode);
+      driver_modules[i].set_state(7,ad5592_state::off_mode);
+    }
+  }
 }
 
 void run_stuff(void) {
    
 }
 
+float read_ad5592_temperature(byte module) {
+  if (check_eeprom_presence(module) == 1) {
+    return driver_modules[module-1].read_temperature();
+  }
+  else {
+    return 0;
+  }
+}
+
+int read_ad5592_mode(byte module, byte io){
+  if (check_eeprom_presence(module) == 1) {
+    // its a bit messy converting between ad5592 modes and SCPI modes.
+    /* SCPI modes:
+     *    {"UNKNOWN", 0},
+     *    {"ADC", 1},
+     *    {"DAC", 2},
+     *    {"GPO_DRIVE", 3},
+     *    {"GPO_SINK", 4},
+     *    {"GPI", 5},
+     *    {"Z", 6},
+     *    {"OFF", 7},
+     *    {"UNAVAILABLE", 8},
+     * 
+     * AD5592 modes:
+     *    enum ad5592_state
+     *    {
+     *        adc_mode,
+     *        dac_mode,
+     *        gpi_mode,
+     *        gpo_mode,
+     *        z_mode,
+     *        off_mode, //off is the equivalent of pull-down mode.
+     *        unknown //there is one other state: when nothing else is set. Not sure what happens then.
+     *    };
+     *    enum ad5592_gio_mode
+     *    {
+     *        push_pull,
+     *        open_drain
+     *    };
+     */
+    ad5592_state mode_enum = driver_modules[module-1].get_state(io);
+    if (mode_enum == ad5592_state::adc_mode) {
+      return 1;
+    }
+    else if (mode_enum == ad5592_state::dac_mode) {
+      return 2;
+    }
+    else if(mode_enum == ad5592_state::gpo_mode) {
+      //gpo has two sub-modes
+      ad5592_gio_mode gio_enum = driver_modules[module-1].get_mode(io);
+      if (gio_enum == ad5592_gio_mode::push_pull) {
+        return 3;
+      }
+      else {
+        return 4;
+      }
+    }
+    else if (mode_enum == ad5592_state::gpi_mode) {
+      return 5;
+    }
+    else if (mode_enum == ad5592_state::z_mode) {
+      return 6;
+    }
+    else if (mode_enum == ad5592_state::off_mode) {
+      return 7;
+    }
+    else {
+      return 0;
+    }
+  }
+  else {
+    return 8; //return unknown mode
+  }
+}
+
+int write_ad5592_mode(byte module, byte io, int mode){
+  if (check_eeprom_presence(module) == 1) {
+    // its a bit messy converting between ad5592 modes and SCPI modes.
+    /* SCPI modes:
+     *    {"UNKNOWN", 0},
+     *    {"ADC", 1},
+     *    {"DAC", 2},
+     *    {"GPO_DRIVE", 3},
+     *    {"GPO_SINK", 4},
+     *    {"GPI", 5},
+     *    {"Z", 6},
+     *    {"OFF", 7},
+     *    {"UNAVAILABLE", 8},
+     * 
+     * AD5592 modes:
+     *    enum ad5592_state
+     *    {
+     *        adc_mode,
+     *        dac_mode,
+     *        gpi_mode,
+     *        gpo_mode,
+     *        z_mode,
+     *        off_mode, //off is the equivalent of pull-down mode.
+     *        unknown //there is one other state: when nothing else is set. Not sure what happens then.
+     *    };
+     *    enum ad5592_gio_mode
+     *    {
+     *        push_pull,
+     *        open_drain
+     *    };
+     */
+    if (mode == 1) {
+      // adc mode
+      driver_modules[module-1].set_state(io,ad5592_state::adc_mode);
+      return 1;
+    }
+    else if (mode == 2) {
+      // dac mode
+      driver_modules[module-1].set_state(io,ad5592_state::dac_mode);
+      return 2;
+    }
+    else if (mode == 3) {
+      // gpo drive mode: must set both gpo and drive modes
+      driver_modules[module-1].set_state(io,ad5592_state::gpo_mode);
+      driver_modules[module-1].set_gpo_mode(io,ad5592_gio_mode::push_pull);
+      return 3;
+    }
+    else if (mode == 4) {
+      // gpo sink mode: must set both gpo and drive modes
+      driver_modules[module-1].set_state(io,ad5592_state::gpo_mode);
+      driver_modules[module-1].set_gpo_mode(io,ad5592_gio_mode::open_drain);
+      return 4;
+    }
+    else if (mode == 5) {
+      // gpi mode
+      driver_modules[module-1].set_state(io,ad5592_state::gpi_mode);
+      return 5;
+    }
+    else if (mode == 7) {
+      // high z mode
+      driver_modules[module-1].set_state(io,ad5592_state::z_mode);
+      return 6;
+    }
+    else if (mode == 7) {
+      // off mode (weak pull-down):
+      driver_modules[module-1].set_state(io,ad5592_state::off_mode);
+      return 7;
+    }
+    else {
+      // unknown mode
+      driver_modules[module-1].set_state(io,ad5592_state::unknown);
+      return 0;
+    }
+  }
+  else {
+    return 8; //return unknown mode
+  }
+}
+
+float read_ad5592_data(byte module, byte io){
+  if (check_eeprom_presence(module) == 1) {
+    return driver_modules[module-1].read_state(io);
+  }
+  else {
+    return 0;
+  }
+}
+
+float write_ad5592_data(byte module, byte io, float val){
+  if (check_eeprom_presence(module) == 1) {
+    return driver_modules[module-1].write_state(io,(float)val);
+  }
+  else {
+    return 0;
+  }
+}
 
 byte read_eeprom_byte(byte module, uint16_t address) {
     SPI.beginTransaction(SPISettings(500000, MSBFIRST, SPI_MODE0));

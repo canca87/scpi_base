@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <SPI.h>
+#include "ad5592.h"
 
 // Define any IO mappings here
 #define pin0 = 0
@@ -10,6 +11,16 @@
 // hardware related functions should go here:
 void run_stuff(void); //general dummy function for testing stuff.
 void init_hardware(void); // initialisation routine for hardware modules and IO.
+
+float read_ad5592_temperature(byte module);
+
+int read_ad5592_mode(byte module, byte io);
+
+int write_ad5592_mode(byte module, byte io, int mode);
+
+float read_ad5592_data(byte module, byte io);
+
+float write_ad5592_data(byte module, byte io, float val);
 
 byte read_eeprom_byte(byte module, uint16_t address);
 

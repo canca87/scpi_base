@@ -649,7 +649,795 @@ static scpi_result_t set_state(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/**
+ * TEMPerature?
+ * 
+ * Returns the temperature of the drivers: Returns 0 if driver missing.
+ * The EEPROM presense is checked. The temperature is then read from the AD5592.
+ * 
+ */
+static scpi_result_t get_ad5592_temperature(scpi_t *context) {
+    scpi_parameter_t channel_list_param;
+#define MAXROW 8    /* maximum number of rows */
+#define MAXCOL 6    /* maximum number of columns */
+#define MAXDIM 2    /* maximum number of dimensions */
+    scpi_channel_value_t array[MAXROW * MAXCOL]; /* array which holds values in order (2D) */
+    size_t chanlst_idx; /* index for channel list */
+    size_t arr_idx = 0; /* index for array */
+    size_t n, m = 1; /* counters for row (n) and columns (m) */
 
+    /* get channel list */
+    if (SCPI_Parameter(context, &channel_list_param, FALSE)) {
+        scpi_expr_result_t res;
+        scpi_bool_t is_range;
+        int32_t values_from[MAXDIM];
+        int32_t values_to[MAXDIM];
+        size_t dimensions;
+
+        bool for_stop_row = FALSE; /* true if iteration for rows has to stop */
+        bool for_stop_col = FALSE; /* true if iteration for columns has to stop */
+        int32_t dir_row = 1; /* direction of counter for rows, +/-1 */
+        int32_t dir_col = 1; /* direction of counter for columns, +/-1 */
+
+        /* the next statement is valid usage and it gets only real number of dimensions for the first item (index 0) */
+        if (!SCPI_ExprChannelListEntry(context, &channel_list_param, 0, &is_range, NULL, NULL, 0, &dimensions)) {
+            chanlst_idx = 0; /* call first index */
+            arr_idx = 0; /* set arr_idx to 0 */
+            do { /* if valid, iterate over channel_list_param index while res == valid (do-while cause we have to do it once) */
+                res = SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions);
+                if (is_range == FALSE) { /* still can have multiple dimensions */
+                    if (dimensions == 1) {
+                        /* here we have our values
+                         * row == values_from[0]
+                         * col == 0 (fixed number)
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = 0;
+                    } else if (dimensions == 2) {
+                        /* here we have our values
+                         * row == values_fom[0]
+                         * col == values_from[1]
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = values_from[1];
+                    } else {
+                        return SCPI_RES_ERR;
+                    }
+                    arr_idx++; /* inkrement array where we want to save our values to, not neccessary otherwise */
+                    if (arr_idx >= MAXROW * MAXCOL) {
+                        return SCPI_RES_ERR;
+                    }
+                } else if (is_range == TRUE) {
+                    if (values_from[0] > values_to[0]) {
+                        dir_row = -1; /* we have to decrement from values_from */
+                    } else { /* if (values_from[0] < values_to[0]) */
+                        dir_row = +1; /* default, we increment from values_from */
+                    }
+
+                    /* iterating over rows, do it once -> set for_stop_row = false
+                     * needed if there is channel list index isn't at end yet */
+                    for_stop_row = FALSE;
+                    for (n = values_from[0]; for_stop_row == FALSE; n += dir_row) {
+                        /* usual case for ranges, 2 dimensions */
+                        if (dimensions == 2) {
+                            if (values_from[1] > values_to[1]) {
+                                dir_col = -1;
+                            } else if (values_from[1] < values_to[1]) {
+                                dir_col = +1;
+                            }
+                            /* iterating over columns, do it at least once -> set for_stop_col = false
+                             * needed if there is channel list index isn't at end yet */
+                            for_stop_col = FALSE;
+                            for (m = values_from[1]; for_stop_col == FALSE; m += dir_col) {
+                                /* here we have our values
+                                 * row == n
+                                 * col == m
+                                 * call a function or something */
+                                array[arr_idx].row = n;
+                                array[arr_idx].col = m;
+                                arr_idx++;
+                                if (arr_idx >= MAXROW * MAXCOL) {
+                                    return SCPI_RES_ERR;
+                                }
+                                if (m == (size_t)values_to[1]) {
+                                    /* endpoint reached, stop column for-loop */
+                                    for_stop_col = TRUE;
+                                }
+                            }
+                            /* special case for range, example: (@2!1) */
+                        } else if (dimensions == 1) {
+                            /* here we have values
+                             * row == n
+                             * col == 0 (fixed number)
+                             * call function or sth. */
+                            array[arr_idx].row = n;
+                            array[arr_idx].col = 0;
+                            arr_idx++;
+                            if (arr_idx >= MAXROW * MAXCOL) {
+                                return SCPI_RES_ERR;
+                            }
+                        }
+                        if (n == (size_t)values_to[0]) {
+                            /* endpoint reached, stop row for-loop */
+                            for_stop_row = TRUE;
+                        }
+                    }
+
+
+                } else {
+                    return SCPI_RES_ERR;
+                }
+                /* increase index */
+                chanlst_idx++;
+            } while (SCPI_EXPR_OK == SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions));
+            /* while checks, whether incremented index is valid */
+        }
+    }
+    else {
+        //Check all channels:
+        for (int i = 0; i < 6; i++) {
+            SCPI_ResultFloat(context, read_ad5592_temperature(i+1));
+        }
+    }
+
+    {
+        size_t i;
+        for (i = 0; i< arr_idx; i++) {
+            SCPI_ResultFloat(context, read_ad5592_temperature(array[i].row)); // get the version
+        }
+    }
+    return SCPI_RES_OK;
+}
+
+scpi_choice_def_t ad5592_channel_mode[] = {
+    {"UNKNOWN", 0},
+    {"ADC", 1},
+    {"DAC", 2},
+    {"GPO_DRIVE", 3},
+    {"GPO_SINK", 4},
+    {"GPI", 5},
+    {"Z", 6},
+    {"OFF", 7},
+    {"UNAVAILABLE", 8},
+    SCPI_CHOICE_LIST_END /* termination of option list */
+};
+
+/**
+ * MODe?
+ * 
+ * Returns the operation mode of a specific channel.
+ * Or all channels of a selected driver.
+ * Or all channels if no channels are parsed.
+ * 
+ */
+static scpi_result_t get_ad5592_mode(scpi_t *context) {
+    scpi_parameter_t channel_list_param;
+#define MAXROW 8    /* maximum number of rows */
+#define MAXCOL 6    /* maximum number of columns */
+#define MAXDIM 2    /* maximum number of dimensions */
+    scpi_channel_value_t array[MAXROW * MAXCOL]; /* array which holds values in order (2D) */
+    size_t chanlst_idx; /* index for channel list */
+    size_t arr_idx = 0; /* index for array */
+    size_t n, m = 1; /* counters for row (n) and columns (m) */
+
+    /* get channel list */
+    if (SCPI_Parameter(context, &channel_list_param, FALSE)) {
+        scpi_expr_result_t res;
+        scpi_bool_t is_range;
+        int32_t values_from[MAXDIM];
+        int32_t values_to[MAXDIM];
+        size_t dimensions;
+
+        bool for_stop_row = FALSE; /* true if iteration for rows has to stop */
+        bool for_stop_col = FALSE; /* true if iteration for columns has to stop */
+        int32_t dir_row = 1; /* direction of counter for rows, +/-1 */
+        int32_t dir_col = 1; /* direction of counter for columns, +/-1 */
+
+        /* the next statement is valid usage and it gets only real number of dimensions for the first item (index 0) */
+        if (!SCPI_ExprChannelListEntry(context, &channel_list_param, 0, &is_range, NULL, NULL, 0, &dimensions)) {
+            chanlst_idx = 0; /* call first index */
+            arr_idx = 0; /* set arr_idx to 0 */
+            do { /* if valid, iterate over channel_list_param index while res == valid (do-while cause we have to do it once) */
+                res = SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions);
+                if (is_range == FALSE) { /* still can have multiple dimensions */
+                    if (dimensions == 1) {
+                        /* here we have our values
+                         * row == values_from[0]
+                         * col == 0 (fixed number)
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = 0;
+                    } else if (dimensions == 2) {
+                        /* here we have our values
+                         * row == values_fom[0]
+                         * col == values_from[1]
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = values_from[1];
+                    } else {
+                        return SCPI_RES_ERR;
+                    }
+                    arr_idx++; /* inkrement array where we want to save our values to, not neccessary otherwise */
+                    if (arr_idx >= MAXROW * MAXCOL) {
+                        return SCPI_RES_ERR;
+                    }
+                } else if (is_range == TRUE) {
+                    if (values_from[0] > values_to[0]) {
+                        dir_row = -1; /* we have to decrement from values_from */
+                    } else { /* if (values_from[0] < values_to[0]) */
+                        dir_row = +1; /* default, we increment from values_from */
+                    }
+
+                    /* iterating over rows, do it once -> set for_stop_row = false
+                     * needed if there is channel list index isn't at end yet */
+                    for_stop_row = FALSE;
+                    for (n = values_from[0]; for_stop_row == FALSE; n += dir_row) {
+                        /* usual case for ranges, 2 dimensions */
+                        if (dimensions == 2) {
+                            if (values_from[1] > values_to[1]) {
+                                dir_col = -1;
+                            } else if (values_from[1] < values_to[1]) {
+                                dir_col = +1;
+                            }
+                            /* iterating over columns, do it at least once -> set for_stop_col = false
+                             * needed if there is channel list index isn't at end yet */
+                            for_stop_col = FALSE;
+                            for (m = values_from[1]; for_stop_col == FALSE; m += dir_col) {
+                                /* here we have our values
+                                 * row == n
+                                 * col == m
+                                 * call a function or something */
+                                array[arr_idx].row = n;
+                                array[arr_idx].col = m;
+                                arr_idx++;
+                                if (arr_idx >= MAXROW * MAXCOL) {
+                                    return SCPI_RES_ERR;
+                                }
+                                if (m == (size_t)values_to[1]) {
+                                    /* endpoint reached, stop column for-loop */
+                                    for_stop_col = TRUE;
+                                }
+                            }
+                            /* special case for range, example: (@2!1) */
+                        } else if (dimensions == 1) {
+                            /* here we have values
+                             * row == n
+                             * col == 0 (fixed number)
+                             * call function or sth. */
+                            array[arr_idx].row = n;
+                            array[arr_idx].col = 0;
+                            arr_idx++;
+                            if (arr_idx >= MAXROW * MAXCOL) {
+                                return SCPI_RES_ERR;
+                            }
+                        }
+                        if (n == (size_t)values_to[0]) {
+                            /* endpoint reached, stop row for-loop */
+                            for_stop_row = TRUE;
+                        }
+                    }
+
+
+                } else {
+                    return SCPI_RES_ERR;
+                }
+                /* increase index */
+                chanlst_idx++;
+            } while (SCPI_EXPR_OK == SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions));
+            /* while checks, whether incremented index is valid */
+        }
+    }
+    else {
+        //Return all channels:
+        for (int i = 0; i < 6; i++) {
+            for (int j = 0; j < 8; j++) {
+                int32_t param = read_ad5592_mode(i+1,j);
+                const char * name;
+
+                SCPI_ChoiceToName(ad5592_channel_mode, param, &name);
+                //fprintf(stderr, "\tP1=%s (%ld)\r\n", name, (long int) param);
+
+                //SCPI_ResultInt32(context, param);
+                SCPI_ResultCharacters(context,name,strlen(name));
+            }
+        }
+    }
+
+    {
+        size_t i;
+        for (i = 0; i< arr_idx; i++) {
+            if (array[i].col == 0) {
+                // do all the channels if the column is zero
+                for (int j = 0; j < 8; j++) {
+                int32_t param = read_ad5592_mode(array[i].row,j);
+                const char * name;
+
+                SCPI_ChoiceToName(ad5592_channel_mode, param, &name);
+                //fprintf(stderr, "\tP1=%s (%ld)\r\n", name, (long int) param);
+
+                //SCPI_ResultInt32(context, param);
+                SCPI_ResultCharacters(context,name,strlen(name));
+               }
+            }
+            else {
+                //  return a specific channel
+                int32_t param = read_ad5592_mode(array[i].row,array[i].col-1);
+                const char * name;
+
+                SCPI_ChoiceToName(ad5592_channel_mode, param, &name);
+                //fprintf(stderr, "\tP1=%s (%ld)\r\n", name, (long int) param);
+
+                //SCPI_ResultInt32(context, param);
+                SCPI_ResultCharacters(context,name,strlen(name));
+            }
+        }
+    }
+    return SCPI_RES_OK;
+}
+
+/**
+ * MODe
+ * 
+ * Sets the operational mode of a specific IO channel.
+ * Must provide a channel, or a range of channels.
+ * Must provide a mode ID string.
+ *  
+ */
+static scpi_result_t set_ad5592_mode(scpi_t *context) {
+    scpi_parameter_t channel_list_param;
+#define MAXROW 8    /* maximum number of rows */
+#define MAXCOL 6    /* maximum number of columns */
+#define MAXDIM 2    /* maximum number of dimensions */
+    scpi_channel_value_t array[MAXROW * MAXCOL]; /* array which holds values in order (2D) */
+    size_t chanlst_idx; /* index for channel list */
+    size_t arr_idx = 0; /* index for array */
+    size_t n, m = 1; /* counters for row (n) and columns (m) */
+
+
+    int32_t param;
+    const char * name;
+
+    if (!SCPI_ParamChoice(context, ad5592_channel_mode, &param, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    SCPI_ChoiceToName(ad5592_channel_mode, param, &name);
+
+    /* get channel list */
+    if (SCPI_Parameter(context, &channel_list_param, TRUE)) {
+        scpi_expr_result_t res;
+        scpi_bool_t is_range;
+        int32_t values_from[MAXDIM];
+        int32_t values_to[MAXDIM];
+        size_t dimensions;
+
+        bool for_stop_row = FALSE; /* true if iteration for rows has to stop */
+        bool for_stop_col = FALSE; /* true if iteration for columns has to stop */
+        int32_t dir_row = 1; /* direction of counter for rows, +/-1 */
+        int32_t dir_col = 1; /* direction of counter for columns, +/-1 */
+
+        /* the next statement is valid usage and it gets only real number of dimensions for the first item (index 0) */
+        if (!SCPI_ExprChannelListEntry(context, &channel_list_param, 0, &is_range, NULL, NULL, 0, &dimensions)) {
+            chanlst_idx = 0; /* call first index */
+            arr_idx = 0; /* set arr_idx to 0 */
+            do { /* if valid, iterate over channel_list_param index while res == valid (do-while cause we have to do it once) */
+                res = SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions);
+                if (is_range == FALSE) { /* still can have multiple dimensions */
+                    if (dimensions == 1) {
+                        /* here we have our values
+                         * row == values_from[0]
+                         * col == 0 (fixed number)
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = 0;
+                    } else if (dimensions == 2) {
+                        /* here we have our values
+                         * row == values_fom[0]
+                         * col == values_from[1]
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = values_from[1];
+                    } else {
+                        return SCPI_RES_ERR;
+                    }
+                    arr_idx++; /* inkrement array where we want to save our values to, not neccessary otherwise */
+                    if (arr_idx >= MAXROW * MAXCOL) {
+                        return SCPI_RES_ERR;
+                    }
+                } else if (is_range == TRUE) {
+                    if (values_from[0] > values_to[0]) {
+                        dir_row = -1; /* we have to decrement from values_from */
+                    } else { /* if (values_from[0] < values_to[0]) */
+                        dir_row = +1; /* default, we increment from values_from */
+                    }
+
+                    /* iterating over rows, do it once -> set for_stop_row = false
+                     * needed if there is channel list index isn't at end yet */
+                    for_stop_row = FALSE;
+                    for (n = values_from[0]; for_stop_row == FALSE; n += dir_row) {
+                        /* usual case for ranges, 2 dimensions */
+                        if (dimensions == 2) {
+                            if (values_from[1] > values_to[1]) {
+                                dir_col = -1;
+                            } else if (values_from[1] < values_to[1]) {
+                                dir_col = +1;
+                            }
+                            /* iterating over columns, do it at least once -> set for_stop_col = false
+                             * needed if there is channel list index isn't at end yet */
+                            for_stop_col = FALSE;
+                            for (m = values_from[1]; for_stop_col == FALSE; m += dir_col) {
+                                /* here we have our values
+                                 * row == n
+                                 * col == m
+                                 * call a function or something */
+                                array[arr_idx].row = n;
+                                array[arr_idx].col = m;
+                                arr_idx++;
+                                if (arr_idx >= MAXROW * MAXCOL) {
+                                    return SCPI_RES_ERR;
+                                }
+                                if (m == (size_t)values_to[1]) {
+                                    /* endpoint reached, stop column for-loop */
+                                    for_stop_col = TRUE;
+                                }
+                            }
+                            /* special case for range, example: (@2!1) */
+                        } else if (dimensions == 1) {
+                            /* here we have values
+                             * row == n
+                             * col == 0 (fixed number)
+                             * call function or sth. */
+                            array[arr_idx].row = n;
+                            array[arr_idx].col = 0;
+                            arr_idx++;
+                            if (arr_idx >= MAXROW * MAXCOL) {
+                                return SCPI_RES_ERR;
+                            }
+                        }
+                        if (n == (size_t)values_to[0]) {
+                            /* endpoint reached, stop row for-loop */
+                            for_stop_row = TRUE;
+                        }
+                    }
+
+
+                } else {
+                    return SCPI_RES_ERR;
+                }
+                /* increase index */
+                chanlst_idx++;
+            } while (SCPI_EXPR_OK == SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions));
+            /* while checks, whether incremented index is valid */
+        }
+    }
+    {
+        size_t i;
+        for (i = 0; i< arr_idx; i++) {
+            if (array[i].col == 0) {
+                // do all the channels if the column is zero
+                for (int j = 0; j < 8; j++) {
+                    write_ad5592_mode(array[i].row,j,param);
+                    SCPI_ResultCharacters(context,name,strlen(name));
+               }
+            }
+            else {
+                //  change a specific channel
+                write_ad5592_mode(array[i].row,array[i].col-1,param);
+                SCPI_ResultCharacters(context,name,strlen(name));
+            }
+        }
+    }
+    return SCPI_RES_OK;
+}
+
+
+/**
+ * READ?
+ * 
+ * Returns the value read from the selected channel(s).
+ * Can read any IO channels.
+ * ADC and DAC results are reuturned as voltages (double).
+ * GPIO are returned as binary 1/0 values.
+ * Off channels always return 1
+ * Unknown mode channels return -1
+ * Errors return -88
+ * 
+ */
+static scpi_result_t get_ad5592_data(scpi_t *context) {
+    scpi_parameter_t channel_list_param;
+#define MAXROW 8    /* maximum number of rows */
+#define MAXCOL 6    /* maximum number of columns */
+#define MAXDIM 2    /* maximum number of dimensions */
+    scpi_channel_value_t array[MAXROW * MAXCOL]; /* array which holds values in order (2D) */
+    size_t chanlst_idx; /* index for channel list */
+    size_t arr_idx = 0; /* index for array */
+    size_t n, m = 1; /* counters for row (n) and columns (m) */
+
+    /* get channel list */
+    if (SCPI_Parameter(context, &channel_list_param, FALSE)) {
+        scpi_expr_result_t res;
+        scpi_bool_t is_range;
+        int32_t values_from[MAXDIM];
+        int32_t values_to[MAXDIM];
+        size_t dimensions;
+
+        bool for_stop_row = FALSE; /* true if iteration for rows has to stop */
+        bool for_stop_col = FALSE; /* true if iteration for columns has to stop */
+        int32_t dir_row = 1; /* direction of counter for rows, +/-1 */
+        int32_t dir_col = 1; /* direction of counter for columns, +/-1 */
+
+        /* the next statement is valid usage and it gets only real number of dimensions for the first item (index 0) */
+        if (!SCPI_ExprChannelListEntry(context, &channel_list_param, 0, &is_range, NULL, NULL, 0, &dimensions)) {
+            chanlst_idx = 0; /* call first index */
+            arr_idx = 0; /* set arr_idx to 0 */
+            do { /* if valid, iterate over channel_list_param index while res == valid (do-while cause we have to do it once) */
+                res = SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions);
+                if (is_range == FALSE) { /* still can have multiple dimensions */
+                    if (dimensions == 1) {
+                        /* here we have our values
+                         * row == values_from[0]
+                         * col == 0 (fixed number)
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = 0;
+                    } else if (dimensions == 2) {
+                        /* here we have our values
+                         * row == values_fom[0]
+                         * col == values_from[1]
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = values_from[1];
+                    } else {
+                        return SCPI_RES_ERR;
+                    }
+                    arr_idx++; /* inkrement array where we want to save our values to, not neccessary otherwise */
+                    if (arr_idx >= MAXROW * MAXCOL) {
+                        return SCPI_RES_ERR;
+                    }
+                } else if (is_range == TRUE) {
+                    if (values_from[0] > values_to[0]) {
+                        dir_row = -1; /* we have to decrement from values_from */
+                    } else { /* if (values_from[0] < values_to[0]) */
+                        dir_row = +1; /* default, we increment from values_from */
+                    }
+
+                    /* iterating over rows, do it once -> set for_stop_row = false
+                     * needed if there is channel list index isn't at end yet */
+                    for_stop_row = FALSE;
+                    for (n = values_from[0]; for_stop_row == FALSE; n += dir_row) {
+                        /* usual case for ranges, 2 dimensions */
+                        if (dimensions == 2) {
+                            if (values_from[1] > values_to[1]) {
+                                dir_col = -1;
+                            } else if (values_from[1] < values_to[1]) {
+                                dir_col = +1;
+                            }
+                            /* iterating over columns, do it at least once -> set for_stop_col = false
+                             * needed if there is channel list index isn't at end yet */
+                            for_stop_col = FALSE;
+                            for (m = values_from[1]; for_stop_col == FALSE; m += dir_col) {
+                                /* here we have our values
+                                 * row == n
+                                 * col == m
+                                 * call a function or something */
+                                array[arr_idx].row = n;
+                                array[arr_idx].col = m;
+                                arr_idx++;
+                                if (arr_idx >= MAXROW * MAXCOL) {
+                                    return SCPI_RES_ERR;
+                                }
+                                if (m == (size_t)values_to[1]) {
+                                    /* endpoint reached, stop column for-loop */
+                                    for_stop_col = TRUE;
+                                }
+                            }
+                            /* special case for range, example: (@2!1) */
+                        } else if (dimensions == 1) {
+                            /* here we have values
+                             * row == n
+                             * col == 0 (fixed number)
+                             * call function or sth. */
+                            array[arr_idx].row = n;
+                            array[arr_idx].col = 0;
+                            arr_idx++;
+                            if (arr_idx >= MAXROW * MAXCOL) {
+                                return SCPI_RES_ERR;
+                            }
+                        }
+                        if (n == (size_t)values_to[0]) {
+                            /* endpoint reached, stop row for-loop */
+                            for_stop_row = TRUE;
+                        }
+                    }
+
+
+                } else {
+                    return SCPI_RES_ERR;
+                }
+                /* increase index */
+                chanlst_idx++;
+            } while (SCPI_EXPR_OK == SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions));
+            /* while checks, whether incremented index is valid */
+        }
+    }
+    else {
+        //Return all channels:
+        for (int i = 0; i < 6; i++) {
+            for (int j = 0; j < 8; j++) {
+                SCPI_ResultFloat(context,read_ad5592_data(i+1,j));
+            }
+        }
+    }
+
+    {
+        size_t i;
+        for (i = 0; i< arr_idx; i++) {
+            if (array[i].col == 0) {
+                // do all the channels if the column is zero
+                for (int j = 0; j < 8; j++) {
+                    SCPI_ResultFloat(context,read_ad5592_data(array[i].row,j));
+                }
+            }
+            else {
+                //  return a specific channel
+                SCPI_ResultFloat(context,read_ad5592_data(array[i].row,array[i].col-1));
+            }
+        }
+    }
+    return SCPI_RES_OK;
+}
+
+
+/**
+ * WRITe
+ * 
+ * Writes data to a channel(s).
+ * Can specify only positive double-precision values between 0 and 5.
+ * The device will write 0 to GPO channels when the data is zero, else it will write 1.
+ * DAC values will be output in volts directly up to the limits of the IC.
+ * Writes to input, off or unknown channels will be ignored (silently).
+ *  
+ */
+static scpi_result_t set_ad5592_data(scpi_t *context) {
+    scpi_parameter_t channel_list_param;
+#define MAXROW 8    /* maximum number of rows */
+#define MAXCOL 6    /* maximum number of columns */
+#define MAXDIM 2    /* maximum number of dimensions */
+    scpi_channel_value_t array[MAXROW * MAXCOL]; /* array which holds values in order (2D) */
+    size_t chanlst_idx; /* index for channel list */
+    size_t arr_idx = 0; /* index for array */
+    size_t n, m = 1; /* counters for row (n) and columns (m) */
+
+
+    float param;
+    
+    if (!SCPI_ParamFloat(context, &param, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    
+    /* get channel list */
+    if (SCPI_Parameter(context, &channel_list_param, TRUE)) {
+        scpi_expr_result_t res;
+        scpi_bool_t is_range;
+        int32_t values_from[MAXDIM];
+        int32_t values_to[MAXDIM];
+        size_t dimensions;
+
+        bool for_stop_row = FALSE; /* true if iteration for rows has to stop */
+        bool for_stop_col = FALSE; /* true if iteration for columns has to stop */
+        int32_t dir_row = 1; /* direction of counter for rows, +/-1 */
+        int32_t dir_col = 1; /* direction of counter for columns, +/-1 */
+
+        /* the next statement is valid usage and it gets only real number of dimensions for the first item (index 0) */
+        if (!SCPI_ExprChannelListEntry(context, &channel_list_param, 0, &is_range, NULL, NULL, 0, &dimensions)) {
+            chanlst_idx = 0; /* call first index */
+            arr_idx = 0; /* set arr_idx to 0 */
+            do { /* if valid, iterate over channel_list_param index while res == valid (do-while cause we have to do it once) */
+                res = SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions);
+                if (is_range == FALSE) { /* still can have multiple dimensions */
+                    if (dimensions == 1) {
+                        /* here we have our values
+                         * row == values_from[0]
+                         * col == 0 (fixed number)
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = 0;
+                    } else if (dimensions == 2) {
+                        /* here we have our values
+                         * row == values_fom[0]
+                         * col == values_from[1]
+                         * call a function or something */
+                        array[arr_idx].row = values_from[0];
+                        array[arr_idx].col = values_from[1];
+                    } else {
+                        return SCPI_RES_ERR;
+                    }
+                    arr_idx++; /* inkrement array where we want to save our values to, not neccessary otherwise */
+                    if (arr_idx >= MAXROW * MAXCOL) {
+                        return SCPI_RES_ERR;
+                    }
+                } else if (is_range == TRUE) {
+                    if (values_from[0] > values_to[0]) {
+                        dir_row = -1; /* we have to decrement from values_from */
+                    } else { /* if (values_from[0] < values_to[0]) */
+                        dir_row = +1; /* default, we increment from values_from */
+                    }
+
+                    /* iterating over rows, do it once -> set for_stop_row = false
+                     * needed if there is channel list index isn't at end yet */
+                    for_stop_row = FALSE;
+                    for (n = values_from[0]; for_stop_row == FALSE; n += dir_row) {
+                        /* usual case for ranges, 2 dimensions */
+                        if (dimensions == 2) {
+                            if (values_from[1] > values_to[1]) {
+                                dir_col = -1;
+                            } else if (values_from[1] < values_to[1]) {
+                                dir_col = +1;
+                            }
+                            /* iterating over columns, do it at least once -> set for_stop_col = false
+                             * needed if there is channel list index isn't at end yet */
+                            for_stop_col = FALSE;
+                            for (m = values_from[1]; for_stop_col == FALSE; m += dir_col) {
+                                /* here we have our values
+                                 * row == n
+                                 * col == m
+                                 * call a function or something */
+                                array[arr_idx].row = n;
+                                array[arr_idx].col = m;
+                                arr_idx++;
+                                if (arr_idx >= MAXROW * MAXCOL) {
+                                    return SCPI_RES_ERR;
+                                }
+                                if (m == (size_t)values_to[1]) {
+                                    /* endpoint reached, stop column for-loop */
+                                    for_stop_col = TRUE;
+                                }
+                            }
+                            /* special case for range, example: (@2!1) */
+                        } else if (dimensions == 1) {
+                            /* here we have values
+                             * row == n
+                             * col == 0 (fixed number)
+                             * call function or sth. */
+                            array[arr_idx].row = n;
+                            array[arr_idx].col = 0;
+                            arr_idx++;
+                            if (arr_idx >= MAXROW * MAXCOL) {
+                                return SCPI_RES_ERR;
+                            }
+                        }
+                        if (n == (size_t)values_to[0]) {
+                            /* endpoint reached, stop row for-loop */
+                            for_stop_row = TRUE;
+                        }
+                    }
+
+
+                } else {
+                    return SCPI_RES_ERR;
+                }
+                /* increase index */
+                chanlst_idx++;
+            } while (SCPI_EXPR_OK == SCPI_ExprChannelListEntry(context, &channel_list_param, chanlst_idx, &is_range, values_from, values_to, 4, &dimensions));
+            /* while checks, whether incremented index is valid */
+        }
+    }
+    {
+        size_t i;
+        for (i = 0; i< arr_idx; i++) {
+            if (array[i].col == 0) {
+                // do all the channels if the column is zero
+                for (int j = 0; j < 8; j++) {
+                    SCPI_ResultFloat(context,write_ad5592_data(array[i].row,j,param));
+               }
+            }
+            else {
+                //  change a specific channel
+                SCPI_ResultFloat(context,write_ad5592_data(array[i].row,array[i].col-1,param));
+            }
+        }
+    }
+    return SCPI_RES_OK;
+}
 
 
 const scpi_command_t scpi_commands[] = {
@@ -711,6 +1499,11 @@ const scpi_command_t scpi_commands[] = {
     {"DRive:STATe?", get_state, 0},
     {"DRiVe:STATe?", get_state, 0},
     {"DRIVe:STATe", set_state, 0},
+    {"DRIVe:TEMPerature?", get_ad5592_temperature, 0},
+    {"DRIVe:MODe?", get_ad5592_mode, 0},
+    {"DRIVe:MODe", set_ad5592_mode, 0},
+    {"DRIVe:READ?", get_ad5592_data, 0},
+    {"DRIVe:WRITe", set_ad5592_data, 0},
     SCPI_CMD_LIST_END
 };
 
