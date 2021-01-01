@@ -31,6 +31,7 @@
 #define _gpio_high_z      0b0110100000000000
 #define _reset            0b0111110110101100
 #define _dac_write        0b1000000000000000
+#define _ad5592_serial_debug
 
 enum ad5592_state
 {

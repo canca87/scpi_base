@@ -33,12 +33,6 @@ void init_hardware(void){
   for (byte i = 0; i< 6; i++) {
     if (check_eeprom_presence(i+1) == 1) {
       driver_modules[i].begin(module_AD5592_pin[i]);
-      Serial.begin(9600);
-      delay(1000);
-      Serial.print("Driver module ");
-      Serial.print(i);
-      Serial.print(" started with pin ");
-      Serial.println(module_AD5592_pin[i]);
       // Set some default pin modes for the driver:
       // IO-0 is DAC
       // IO-1 is ADC

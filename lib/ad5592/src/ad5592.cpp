@@ -144,11 +144,13 @@ float ad5592::read_temperature(void)
     //From the datasheet, the address of the temperature reading is 0b1000
     int returned_io = (returned_data >> 12) & 0x000F;
     if (0b1000 != returned_io) {
+        #ifdef _ad5592_serial_debug
         Serial.print("Returned DAC address error. Expected ");
         Serial.print(8);
         Serial.print(" but received ");
         Serial.print(returned_io);
         Serial.println(".");
+        #endif
         return -1;
     }
     float adc_code = returned_data & 0x0FFF; //as per page 32 of the datasheet
@@ -207,11 +209,13 @@ float ad5592::read_state(int io)
         //Check the returned register is the correct one 
         int returned_io = (returned_data >> 12) & 0x000F;
         if (io != returned_io) {
+            #ifdef _ad5592_serial_debug
             Serial.print("Returned ADC address error. Expected ");
             Serial.print(io);
             Serial.print(" but received ");
             Serial.print(returned_io);
             Serial.println(".");
+            #endif
             return returned_data; //return everything: let the user decide what it means.
         }
         return convert_dac_to_analog(returned_data);
@@ -263,11 +267,13 @@ float ad5592::write_state(int io, float val)
         //check the return data address is correct (bit 14-12 should match IO)
         int returned_io = (returned_data >> 12) & 0x0007;
         if (io != returned_io) {
+            #ifdef _ad5592_serial_debug
             Serial.print("Returned DAC address error. Expected ");
             Serial.print(io);
             Serial.print(" but received ");
             Serial.print(returned_io);
             Serial.println(".");
+            #endif
             return returned_data; //return everything.
         }
         return read_state(io); //read the actual register info and return it.
