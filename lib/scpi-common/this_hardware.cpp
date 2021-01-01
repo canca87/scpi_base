@@ -333,6 +333,7 @@ int recall_module_eeprom(byte module) {
 int recall_system_eeprom(){
     /* Recall from the teensy EEPROM:
     * address 0 is reserved.
+    * address 1-4 is watchdog timeout as uint32_t value?
     */
     unsigned int eeAddress = 1;
     uint16_t count = 0;

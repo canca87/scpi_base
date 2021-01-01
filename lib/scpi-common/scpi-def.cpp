@@ -1440,6 +1440,50 @@ static scpi_result_t set_ad5592_data(scpi_t *context) {
 }
 
 
+/** SYSTem:TIMEout?
+ * Get the timeout time in microseconds
+ *
+ * Result should be time in microseconds
+ *
+ * Return SCPI_RES_OK
+ */
+static scpi_result_t GetTimeout(scpi_t * context) {
+    
+    SCPI_ResultInt64(context, watchdog_timeout_microseconds);
+
+    return SCPI_RES_OK;
+}
+
+/** SYSTem:TIMEout
+ * Set the timeout time in microseconds
+ *
+ * Result should be time in microseconds
+ *
+ * Return SCPI_RES_OK
+ */
+static scpi_result_t SetTimeout(scpi_t * context) {
+    
+    int64_t param1;
+    
+    /* read first parameter if present */
+    if (!SCPI_ParamInt64(context, &param1, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    
+    // if time is >= 1
+    if (param1 >= 1) {
+        watchdog_timeout_microseconds = (long)param1;
+    }
+    else {
+        watchdog_timeout_microseconds = 0;
+    }
+    
+
+    SCPI_ResultInt64(context, watchdog_timeout_microseconds);
+
+    return SCPI_RES_OK;
+}
+
 const scpi_command_t scpi_commands[] = {
     /* IEEE Mandated Commands (SCPI std V1999.0 4.1.1) */
     {"*CLS", SCPI_CoreCls, 0},
@@ -1460,7 +1504,9 @@ const scpi_command_t scpi_commands[] = {
     {"SYSTem:ERRor[:NEXT]?", SCPI_SystemErrorNextQ, 0},
     {"SYSTem:ERRor:COUNt?", SCPI_SystemErrorCountQ, 0},
     {"SYSTem:VERSion?", SCPI_SystemVersionQ, 0},
-
+    {.pattern = "SYSTem:TIMEout?", .callback = GetTimeout,},
+    {.pattern = "SYSTem:TIMEout", .callback = SetTimeout,},
+    
     //{"STATus:OPERation?", scpi_stub_callback, 0},
     //{"STATus:OPERation:EVENt?", scpi_stub_callback, 0},
     //{"STATus:OPERation:CONDition?", scpi_stub_callback, 0},

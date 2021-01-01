@@ -8,6 +8,8 @@
 // Define any IO mappings here
 #define pin0 = 0
 
+extern uint32_t watchdog_timeout_microseconds;
+
 // hardware related functions should go here:
 void run_stuff(void); //general dummy function for testing stuff.
 void init_hardware(void); // initialisation routine for hardware modules and IO.

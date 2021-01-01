@@ -6,6 +6,11 @@
 #define TEST_SCPI_INPUT(cmd) result = SCPI_Input(&scpi_context, cmd, strlen(cmd))
 void test_scpi(void);
 void serial_scpi(void);
+void watchdog_timeout(void);
+
+uint32_t watchdog_timeout_microseconds = 0; //default is off
+
+IntervalTimer watchdogTimer;
 
 //redirect printf functions to serial port:
 extern "C" {
@@ -32,12 +37,14 @@ void setup() {
           SCPI_IDN1, SCPI_IDN2, SCPI_IDN3, SCPI_IDN4,
           scpi_input_buffer, SCPI_INPUT_BUFFER_LENGTH,
           scpi_error_queue_data, SCPI_ERROR_QUEUE_SIZE);
+
+  watchdogTimer.begin(watchdog_timeout,watchdog_timeout_microseconds);
 }
 
 void loop() {
-  test_scpi();
-  delay(1000);
-  //serial_scpi();
+  //test_scpi();
+  //delay(1000);
+  serial_scpi();
 }
 
 void serial_scpi(void) {
@@ -115,4 +122,10 @@ void test_scpi(void) {
   TEST_SCPI_INPUT("DRIV:WRITE 2.5,(@2!1)\r\n"); //IO 2!1 set it to 2.5v output (DAC)
   TEST_SCPI_INPUT("DRIV:READ? (@2!1:2!2)\r\n"); // read DAC and ADC values (short IO-0 and IO-1 to see if they match)
 
+}
+
+void watchdog_timeout(void){
+  int result; //used by the TEST_SCPI_INPUT macro...
+  (void)result; //this is to silence the unused variable warning from the compiler. Its used by the macro below:  
+  TEST_SCPI_INPUT("DRIV:WRITE 0,(@1!3,2!1,3!1,4!1,5!1,6!1)\r\n"); //move to safe-ish mode (regulators off)
 }
